@@ -1,10 +1,12 @@
 import numpy as np
 import gymnasium as gym
 import matplotlib.pyplot as plt
+import argparse
 from QLearningAgent import QLearningAgent
+from visualizer import TrainingVisualizer
 
 
-def train_agent(env, agent, n_episodes, alpha, gamma, epsilon_decay, epsilon_min):
+def train_agent(env, agent, n_episodes, alpha, gamma, epsilon_decay, epsilon_min, visualizer=None):
     """Entraîne l'agent sur l'environnement.
     
     Args:
@@ -15,6 +17,7 @@ def train_agent(env, agent, n_episodes, alpha, gamma, epsilon_decay, epsilon_min
         gamma: Facteur de réduction
         epsilon_decay: Facteur de décroissance d'epsilon
         epsilon_min: Valeur minimale d'epsilon
+        visualizer: Visualisateur optionnel
         
     Returns:
         Liste des récompenses par épisode
@@ -23,6 +26,22 @@ def train_agent(env, agent, n_episodes, alpha, gamma, epsilon_decay, epsilon_min
     success_count = 0
 
     for episode in range(n_episodes):
+        if visualizer:
+            if not visualizer.handle_events() or not visualizer.is_running():
+                break
+            
+            if visualizer.should_reset_training():
+                agent = QLearningAgent(env.observation_space.n, env.action_space.n)
+                rewards_history = []
+                success_count = 0
+                episode = 0
+                continue
+            
+            while visualizer.is_paused():
+                visualizer.handle_events()
+                if not visualizer.is_running():
+                    return rewards_history
+        
         state = env.reset()[0]
         done = False
         total_reward = 0
@@ -40,10 +59,13 @@ def train_agent(env, agent, n_episodes, alpha, gamma, epsilon_decay, epsilon_min
         rewards_history.append(total_reward)
         if total_reward > 0:
             success_count += 1
+        
+        if visualizer:
+            visualizer.update(episode + 1, n_episodes, agent.epsilon, total_reward, state, success_count)
 
         agent.decay_epsilon(epsilon_decay, epsilon_min)
 
-        if (episode + 1) % 1000 == 0:
+        if (episode + 1) % 1000 == 0 and not visualizer:
             avg_reward = np.mean(rewards_history[-100:])
             print(f"Épisode {episode + 1}/{n_episodes} - Récompense moyenne (100 derniers): {avg_reward:.2f} - ε: {agent.epsilon:.3f}")
 
@@ -116,6 +138,11 @@ def evaluate_agent(env, agent, n_episodes=100):
 
 def main():
     """Fonction principale du programme."""
+    parser = argparse.ArgumentParser(description='Entraînement Q-Learning sur FrozenLake')
+    parser.add_argument('-v', '--visualize', action='store_true', 
+                        help='Activer le mode visualisation interactive')
+    args = parser.parse_args()
+    
     env = gym.make(
         'FrozenLake-v1',
         map_name="4x4",
@@ -125,32 +152,44 @@ def main():
     n_states = env.observation_space.n
     n_actions = env.action_space.n
 
-    print(f"Taille de l'espace d'observation : {n_states}")
-    print(f"Nombre d'actions : {n_actions}")
+    if not args.visualize:
+        print(f"Taille de l'espace d'observation : {n_states}")
+        print(f"Nombre d'actions : {n_actions}")
 
     agent = QLearningAgent(n_states, n_actions)
 
     alpha = 0.1
     gamma = 0.99
     epsilon_decay = 0.9995
-    epsilon_min = 0.01
-    n_episodes = 20000
+    epsilon_min = 0.1
+    n_episodes = 30000
 
-    print("\n" + "="*50)
-    print("DÉBUT DE L'ENTRAÎNEMENT")
-    print("="*50)
+    visualizer = None
+    if args.visualize:
+        env_unwrapped = env.unwrapped
+        visualizer = TrainingVisualizer(env_unwrapped.desc)
+        print("Mode visualisation activé")
+        print("Contrôles: ESPACE=Pause, R=Reset, +/-=Vitesse, Q/ESC=Quitter")
+    else:
+        print("\n" + "="*50)
+        print("DÉBUT DE L'ENTRAÎNEMENT")
+        print("="*50)
 
     rewards_history = train_agent(
-        env, agent, n_episodes, alpha, gamma, epsilon_decay, epsilon_min
+        env, agent, n_episodes, alpha, gamma, epsilon_decay, epsilon_min, visualizer
     )
+
+    if visualizer:
+        visualizer.close()
 
     agent.save('SkaterAgent.pkl')
 
-    print("\n" + "="*50)
-    print("VISUALISATION DES RÉSULTATS")
-    print("="*50)
+    if not args.visualize:
+        print("\n" + "="*50)
+        print("VISUALISATION DES RÉSULTATS")
+        print("="*50)
 
-    plot_results(rewards_history)
+        plot_results(rewards_history)
 
     print("\n" + "="*50)
     print("ÉVALUATION FINALE")
