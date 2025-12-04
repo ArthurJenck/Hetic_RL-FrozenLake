@@ -153,7 +153,7 @@ Le script affiche :
 
 ## Structure du projet
 
-```
+```md
 FrozenLakeML/
 ├── QLearningAgent.py          # Classe de l'agent Q-Learning
 ├── custom_reward_wrapper.py   # Wrapper pour récompenses personnalisées
@@ -273,7 +273,3 @@ Pour tester différentes configurations :
 - Le taux de succès maximal sur FrozenLake 4x4 avec `is_slippery=True` est limité à ~85% en raison de la stochasticité inhérente
 - Le visualisateur peut ralentir significativement l'entraînement sur des machines moins puissantes
 - La compatibilité des modèles sauvegardés est vérifiée uniquement sur le nombre d'états, pas sur d'autres paramètres
-
-## Licence
-
-Ce projet est développé à des fins pédagogiques dans le cadre du cours d'Optimisation par IA à HETIC.
