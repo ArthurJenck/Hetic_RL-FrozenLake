@@ -118,11 +118,8 @@ def main():
     """Fonction principale du programme."""
     env = gym.make(
         'FrozenLake-v1',
-        desc=None,
         map_name="4x4",
-        is_slippery=True,
-        success_rate=1.0/3.0,
-        reward_schedule=(1, 0, 0)
+        is_slippery=True
     )
 
     n_states = env.observation_space.n
@@ -135,7 +132,7 @@ def main():
 
     alpha = 0.1
     gamma = 0.99
-    epsilon_decay = 0.995
+    epsilon_decay = 0.9995
     epsilon_min = 0.01
     n_episodes = 20000
 

@@ -43,8 +43,12 @@ class QLearningAgent:
             alpha: Taux d'apprentissage
             gamma: Facteur de réduction
         """
-        best_next_action = np.max(self.Q[next_state, :])
-        td_target = reward + gamma * best_next_action
+        if done:
+            td_target = reward
+        else:
+            best_next_action = np.max(self.Q[next_state, :])
+            td_target = reward + gamma * best_next_action
+        
         td_error = td_target - self.Q[state, action]
         self.Q[state, action] += alpha * td_error
 
