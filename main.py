@@ -2,11 +2,13 @@ import numpy as np
 import gymnasium as gym
 import matplotlib.pyplot as plt
 import argparse
+import os
 from QLearningAgent import QLearningAgent
 from visualizer import TrainingVisualizer
+from custom_reward_wrapper import CustomRewardWrapper
 
 
-def train_agent(env, agent, n_episodes, alpha, gamma, epsilon_decay, epsilon_min, visualizer=None):
+def train_agent(env, agent, n_episodes, alpha, gamma, epsilon_decay, epsilon_min, visualizer=None, is_slippery=True):
     """Entraîne l'agent sur l'environnement.
     
     Args:
@@ -18,17 +20,33 @@ def train_agent(env, agent, n_episodes, alpha, gamma, epsilon_decay, epsilon_min
         epsilon_decay: Facteur de décroissance d'epsilon
         epsilon_min: Valeur minimale d'epsilon
         visualizer: Visualisateur optionnel
+        is_slippery: État initial du slippery
         
     Returns:
-        Liste des récompenses par épisode
+        Tuple (liste des récompenses, environnement final, agent final)
     """
     rewards_history = []
     success_count = 0
+    current_is_slippery = is_slippery
+    best_success_rate = 0.0
+    eval_window = 100
 
     for episode in range(n_episodes):
         if visualizer:
             if not visualizer.handle_events() or not visualizer.is_running():
                 break
+            
+            if visualizer.is_slippery_toggle_requested():
+                current_is_slippery = not current_is_slippery
+                env.close()
+                env = gym.make('FrozenLake-v1', map_name="4x4", is_slippery=current_is_slippery)
+                env = CustomRewardWrapper(env)
+                agent = QLearningAgent(env.observation_space.n, env.action_space.n)
+                visualizer.set_slippery(current_is_slippery)
+                rewards_history = []
+                success_count = 0
+                episode = 0
+                continue
             
             if visualizer.should_reset_training():
                 agent = QLearningAgent(env.observation_space.n, env.action_space.n)
@@ -47,11 +65,13 @@ def train_agent(env, agent, n_episodes, alpha, gamma, epsilon_decay, epsilon_min
         total_reward = 0
 
         while not done:
-            action = agent.get_action(state)
+            deterministic = visualizer.is_evaluation_mode() if visualizer else False
+            action = agent.get_action(state, deterministic=deterministic)
             next_state, reward, terminated, truncated, info = env.step(action)
             done = terminated or truncated
             
-            agent.update(state, action, reward, next_state, done, alpha, gamma)
+            if not (visualizer and visualizer.is_evaluation_mode()):
+                agent.update(state, action, reward, next_state, done, alpha, gamma)
             
             state = next_state
             total_reward += reward
@@ -60,16 +80,25 @@ def train_agent(env, agent, n_episodes, alpha, gamma, epsilon_decay, epsilon_min
         if total_reward > 0:
             success_count += 1
         
+        if episode >= eval_window:
+            current_success_rate = success_count / (episode + 1)
+            if current_success_rate > best_success_rate:
+                best_success_rate = current_success_rate
+                agent.save('SkaterAgent.pkl')
+                if not visualizer:
+                    print(f"[Épisode {episode + 1}] Nouveau meilleur taux : {best_success_rate*100:.1f}% - Modèle sauvegardé")
+        
         if visualizer:
             visualizer.update(episode + 1, n_episodes, agent.epsilon, total_reward, state, success_count)
 
-        agent.decay_epsilon(epsilon_decay, epsilon_min)
+        if not (visualizer and visualizer.is_evaluation_mode()):
+            agent.decay_epsilon(epsilon_decay, epsilon_min)
 
         if (episode + 1) % 1000 == 0 and not visualizer:
             avg_reward = np.mean(rewards_history[-100:])
             print(f"Épisode {episode + 1}/{n_episodes} - Récompense moyenne (100 derniers): {avg_reward:.2f} - ε: {agent.epsilon:.3f}")
 
-    return rewards_history
+    return rewards_history, env, agent
 
 
 def plot_results(rewards_history, window_size=100):
@@ -148,6 +177,7 @@ def main():
         map_name="4x4",
         is_slippery=True
     )
+    env = CustomRewardWrapper(env)
 
     n_states = env.observation_space.n
     n_actions = env.action_space.n
@@ -156,12 +186,26 @@ def main():
         print(f"Taille de l'espace d'observation : {n_states}")
         print(f"Nombre d'actions : {n_actions}")
 
-    agent = QLearningAgent(n_states, n_actions)
+    model_path = 'SkaterAgent.pkl'
+    if os.path.exists(model_path):
+        print(f"\nModèle existant détecté : {model_path}")
+        temp_agent = QLearningAgent.load(model_path)
+        
+        if temp_agent.Q.shape[0] != n_states:
+            print(f"⚠️  INCOMPATIBILITÉ : Le modèle a {temp_agent.Q.shape[0]} états, l'environnement en a {n_states}")
+            print("→ Création d'un nouvel agent au lieu du chargement\n")
+            agent = QLearningAgent(n_states, n_actions)
+        else:
+            agent = temp_agent
+            print("Reprise de l'entraînement depuis le modèle sauvegardé\n")
+    else:
+        print("\nAucun modèle existant - Initialisation d'un nouvel agent\n")
+        agent = QLearningAgent(n_states, n_actions)
 
     alpha = 0.1
     gamma = 0.99
     epsilon_decay = 0.9995
-    epsilon_min = 0.1
+    epsilon_min = 0.01
     n_episodes = 30000
 
     visualizer = None
@@ -169,19 +213,20 @@ def main():
         env_unwrapped = env.unwrapped
         visualizer = TrainingVisualizer(env_unwrapped.desc)
         print("Mode visualisation activé")
-        print("Contrôles: ESPACE=Pause, R=Reset, +/-=Vitesse, Q/ESC=Quitter")
+        print("Contrôles: ESPACE=Pause, R=Reset, +/-=Vitesse, T=Training/Eval, S=Slippery, Q/ESC=Quitter")
     else:
         print("\n" + "="*50)
         print("DÉBUT DE L'ENTRAÎNEMENT")
         print("="*50)
 
-    rewards_history = train_agent(
-        env, agent, n_episodes, alpha, gamma, epsilon_decay, epsilon_min, visualizer
+    rewards_history, env, agent = train_agent(
+        env, agent, n_episodes, alpha, gamma, epsilon_decay, epsilon_min, visualizer, is_slippery=True
     )
 
     if visualizer:
         visualizer.close()
 
+    print(f"\nSauvegarde finale du modèle...")
     agent.save('SkaterAgent.pkl')
 
     if not args.visualize:

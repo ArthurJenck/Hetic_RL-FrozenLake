@@ -54,6 +54,10 @@ class TrainingVisualizer:
         self.should_reset = False
         self.running = True
         
+        self.evaluation_mode = False
+        self.slippery = True
+        self.toggle_slippery_requested = False
+        
         self.rewards_history = deque(maxlen=100)
         self.episode = 0
         self.total_episodes = 0
@@ -120,6 +124,18 @@ class TrainingVisualizer:
         self.screen.blit(title, (self.stats_x, y_offset))
         y_offset += line_height + 10
         
+        mode_text = "EVALUATION" if self.evaluation_mode else "TRAINING"
+        mode_color = (0, 150, 0) if self.evaluation_mode else (0, 100, 255)
+        mode_surface = self.font_medium.render(f"Mode: {mode_text}", True, mode_color)
+        self.screen.blit(mode_surface, (self.stats_x, y_offset))
+        y_offset += 35
+        
+        slippery_text = "ON" if self.slippery else "OFF"
+        slippery_color = (255, 100, 0) if self.slippery else (100, 100, 100)
+        slippery_surface = self.font_medium.render(f"Slippery: {slippery_text}", True, slippery_color)
+        self.screen.blit(slippery_surface, (self.stats_x, y_offset))
+        y_offset += 45
+        
         stats = [
             f"Épisode: {self.episode} / {self.total_episodes}",
             f"Epsilon: {self.epsilon:.3f}",
@@ -144,6 +160,8 @@ class TrainingVisualizer:
             'ESPACE: Pause/Reprendre',
             'R: Reset',
             '+/-: Vitesse',
+            'T: Training/Eval',
+            'S: Toggle Slippery',
             'Q/ESC: Quitter'
         ]
         
@@ -204,9 +222,13 @@ class TrainingVisualizer:
                 elif event.key == pygame.K_r:
                     self.should_reset = True
                 elif event.key == pygame.K_PLUS or event.key == pygame.K_KP_PLUS or event.key == pygame.K_EQUALS:
-                    self.speed = min(50, self.speed + 10)
+                    self.speed = min(100, self.speed + 10)
                 elif event.key == pygame.K_MINUS or event.key == pygame.K_KP_MINUS:
                     self.speed = max(0.1, self.speed - 10)
+                elif event.key == pygame.K_t:
+                    self.evaluation_mode = not self.evaluation_mode
+                elif event.key == pygame.K_s:
+                    self.toggle_slippery_requested = True
                 elif event.key == pygame.K_q or event.key == pygame.K_ESCAPE:
                     self.running = False
                     return False
@@ -262,6 +284,33 @@ class TrainingVisualizer:
             self.success_count = 0
             return True
         return False
+
+    def is_evaluation_mode(self):
+        """Vérifie si le mode évaluation est actif.
+        
+        Returns:
+            True si en mode évaluation, False sinon
+        """
+        return self.evaluation_mode
+
+    def is_slippery_toggle_requested(self):
+        """Vérifie si un toggle du slippery a été demandé.
+        
+        Returns:
+            True si toggle demandé, False sinon
+        """
+        if self.toggle_slippery_requested:
+            self.toggle_slippery_requested = False
+            return True
+        return False
+
+    def set_slippery(self, value):
+        """Met à jour l'état du slippery pour l'affichage.
+        
+        Args:
+            value: True si slippery activé, False sinon
+        """
+        self.slippery = value
 
     def is_running(self):
         """Vérifie si le visualisateur est actif.
